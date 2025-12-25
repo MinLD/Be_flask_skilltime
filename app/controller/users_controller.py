@@ -1,10 +1,14 @@
-from flask import Blueprint
+from flask import Blueprint, request
+
 from ..utils.response import success_response, error_response
 from flask import request
 from .auth_controller import Role_required
-from ..services.users_service import model_get_user_stats,model_search_user,model_register, get_all_users,update_user_profile, delete_user , get_user_by_id, update_password, model_admin_register
+from ..services.users_service import model_get_user_stats, model_search_user, model_register, get_all_users, \
+    update_user_profile, delete_user, get_user_by_id, update_password,  create_user_by_admin
 from ..schemas.schemas import UserSchema
-from flask_jwt_extended import jwt_required
+from flask_jwt_extended import jwt_required, get_jwt_identity
+from ..schemas.user_schema import CreateUserRequest, RegisterRequest, UpdateProfileRequest
+
 users_bp = Blueprint('api/users', __name__)
 
 @users_bp.route('/stats', methods=['GET'])
@@ -30,58 +34,61 @@ def search_user():
 def get_users():
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 10, type=int)
-    return success_response(get_all_users(page, per_page), code=200)
+    return success_response(get_all_users(page, per_page), code=201, message="Get all users successfully")
 
 @users_bp.route('/admin', methods=['POST'])
 @Role_required(role='admin')
 def create_admin():
-    data = request.get_json()
-    if not data:
-        return error_response('Request body phải là JSON hoặc bị thiếu', 400)
-    user, error = model_admin_register(data)
-    if error:
-        status_code = 409 if "tồn tại" in error else 400
-        return error_response(error, status_code)
-    return success_response(UserSchema().dump(user), code=201)
+    request_data = CreateUserRequest(**request.get_json())
+    new_user = create_user_by_admin(request_data)
+    return success_response(
+        data=UserSchema().dump(new_user),
+        code=201,
+        message="Created user successfully"
+    )
+
     
 
 @users_bp.route('/', methods=['POST'], strict_slashes=False)
 def register(): 
-    data = request.get_json()
-    
-    if not data:
-        return error_response('Request body phải là JSON hoặc bị thiếu', 400)
+    request_data = RegisterRequest(**request.get_json())
+    req = model_register(request_data)
+    return success_response(code=201 , data=UserSchema().dump(req), message="Người dùng tạo tài khoản thành công" )
 
-    user, error = model_register( data)
 
-    if error:
-        status_code = 409 if "tồn tại" in error else 400
-        return error_response(error, status_code)
 
-    user_data = UserSchema().dump(user)
-    return success_response(user_data, code=201)
+     
 
 @users_bp.route('/<string:user_id>', methods=['PATCH'])
 @Role_required(role='admin')
 @jwt_required()
 def update_user(user_id):
-    data = request.form.to_dict()
-    if 'avatar' in request.files:
-        data['avatar'] = request.files['avatar']
-    updated_user, error = update_user_profile(data, user_id)
-    if error:
-        return error_response(error, 400)
-    
-    return success_response(UserSchema().dump(updated_user), code=200)
+    pass
+
+
+@users_bp.route('/profile', methods=['PATCH'])
+@jwt_required()
+def update_profile():
+    current_user_id = get_jwt_identity()
+
+    form_data = request.form.to_dict()
+    request_data = UpdateProfileRequest(**form_data)
+
+    avatar_file = request.files.get('avatar')
+
+    updated_user = update_user_profile(user_id=current_user_id, data=request_data, avatar_file=avatar_file)
+    return success_response(
+        data=UserSchema().dump(updated_user),
+        message="Profile updated successfully"
+    )
+
 
 @users_bp.route('/<string:user_id>', methods=['DELETE'])
 @jwt_required()
 @Role_required(role='admin')
 def controller_delete_user(user_id):
-    user, error = delete_user(user_id)
-    if error:
-        return error_response(error, 400)
-    return success_response(user, code=200)
+    user = delete_user(user_id)
+    return success_response(message=user, code=200, data="")
 
 @users_bp.route('/<string:user_id>', methods=['GET'])
 @jwt_required()
