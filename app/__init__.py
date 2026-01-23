@@ -7,20 +7,19 @@ from config import config
 from .models.models_model import User, TokenBlocklist
 import cloudinary
 
+from .utils.error_handlers import register_error_handlers
+from .utils.response import error_response, success_response
+
 
 def create_app(config_name='default'):
     app = Flask(__name__)
     app.config.from_object(config[config_name])
     app.json.sort_keys = False
     db.init_app(app)
-    cors.init_app(app, 
-                  resources={r"/api/*": {  
-                      "origins": ["http://localhost:3000"],
-                      "supports_credentials": True,
-                      "allow_headers": ["Content-Type", "Authorization"]
-                  }}
-              
-    )
+    register_error_handlers(app)
+    # Gọi hàm init_app từ đối tượng cors
+    cors.init_app(app, resources={r"/api/*": {"origins": ["http://localhost:3000", "http://127.0.0.1:3000"]}},
+                  supports_credentials=True)
     migrate.init_app(app, db)
     jwt.init_app(app)
     cloudinary.config(
@@ -35,9 +34,27 @@ def create_app(config_name='default'):
 
     from .controller.users_controller import users_bp
     app.register_blueprint(users_bp, url_prefix='/api/users')
+
+    from .controller.category_controller import  category_bp
+    app.register_blueprint(category_bp, url_prefix='/api/categories')
+
+    from .controller.skill_controller import  skill_bp
+    app.register_blueprint(skill_bp, url_prefix='/api/skills')
+
+    from .controller.user_skill_controller import user_skill_bp
+    app.register_blueprint(user_skill_bp, url_prefix='/api/user_skills')
+
+    from .controller.transaction_controller import transaction_bp
+    app.register_blueprint(transaction_bp, url_prefix='/api/transactions')
+
+
+
+
+
+
+
     
-    from .controller.upload_controller import upload_bp
-    app.register_blueprint(upload_bp, url_prefix='/upload')
+
 
 
     
@@ -68,20 +85,18 @@ def create_app(config_name='default'):
     # jwt error handler
     @jwt.expired_token_loader
     def expired_token_callback(jwt_header, jwt_data):
-        return jsonify({"message": "The token has expired", "error": "token_expired"}), 401
+        return error_response(message="The token has expired",error_code="TOKEN_EXPIRED", code=401 )
+
+
     
     @jwt.invalid_token_loader
     def invalid_token_callback(error):
-        return jsonify({"message": "Signature verification failed.", "error": "invalid_token"}), 401
+        return error_response(message="Signature verification failed.", code=401, error_code="invalid_token" )
     
     @jwt.unauthorized_loader
-    def missing_token_callback(error):  
-        return jsonify({
-            "description": "Request does not contain an access token.",
-            "error": "authorization_required"
-        }), 401
-
+    def missing_token_callback(error):
+        return error_response(message="Unauthorized.", code=401, error_code="invalid_token")
     
     from .models import models_model
-    from .services import users_service, role_service, auth_service,upload_service
+    from .services import users_service, role_service, auth_service,upload_service, category_service
     return app

@@ -1,4 +1,5 @@
 # app/models/models.py
+from sqlalchemy.orm import backref
 from ..extensions import db
 from werkzeug.security import generate_password_hash, check_password_hash
 from uuid import uuid4
@@ -24,7 +25,7 @@ class User(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid4()))
     email = db.Column(db.String(255), unique=True, nullable=False)
     password = db.Column(db.String(255), nullable=False)
-    wallet_balance = db.Column(db.Float, nullable=False, default=0.0)
+    wallet_balance = db.Column(db.Integer, nullable=False, default=3)
     status = db.Column(db.String(50), nullable=False, default='active')
     
    
@@ -36,6 +37,11 @@ class User(db.Model):
     
     # 1-1 relationship: uselist=False biến nó thành object đơn thay vì list
     profile = db.relationship('UserProfile', uselist=False, back_populates='user', cascade='all, delete-orphan')
+
+    skill_users = db.relationship('SkillUser', back_populates='user', cascade='all, delete-orphan')
+
+    transactions = db.relationship('Transaction', foreign_keys='Transaction.user_id', back_populates='user',
+                                   lazy='dynamic')
 
     def set_password(self, password):
         self.password = generate_password_hash(password)
@@ -84,6 +90,95 @@ class Media(db.Model):
 
  
     profile_avatar_id = db.Column(db.String(36), db.ForeignKey('user_profile.id'))
+    category_id = db.Column(db.Integer, db.ForeignKey('categories.id'))
+    skill_id = db.Column(db.Integer, db.ForeignKey('skills.id'))
+    skill_user_id = db.Column(db.Integer, db.ForeignKey('skill_user.id'))
+
+
 
     # Relationship
-    profile_avatar = db.relationship('UserProfile', back_populates='avatar')
+    profile_avatar = db.relationship('UserProfile', back_populates='avatar', foreign_keys=[profile_avatar_id])
+    category = db.relationship('Category', back_populates='avatar', foreign_keys=[category_id])
+    skill = db.relationship('Skill', back_populates='avatar', foreign_keys=[skill_id])
+    skill_user = db.relationship(
+        'SkillUser',
+        back_populates='avatar'
+    , foreign_keys = [skill_user_id])
+
+
+
+class Category(db.Model):
+    __tablename__ = 'categories'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False, unique=True)
+    slug = db.Column(db.String(100), nullable=False, unique=True)
+    description = db.Column(db.String(255), nullable=True)
+
+    # relationship
+    avatar = db.relationship('Media', back_populates = 'category',
+                             uselist = False,
+                             cascade = 'all, delete-orphan',
+                             lazy = 'joined'
+                             )
+    skills = db.relationship('Skill', back_populates = 'category')
+
+class Skill(db.Model):
+    __tablename__= 'skills'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False, unique=True)
+    description = db.Column(db.String(255), nullable=True)
+    category_id = db.Column(db.Integer, db.ForeignKey('categories.id'), nullable = False)
+
+    # Relationship
+    category = db.relationship('Category' , back_populates = 'skills')
+    avatar = db.relationship('Media', back_populates='skill',
+                             uselist=False,
+                             cascade='all, delete-orphan',
+                             lazy='joined'
+                             )
+    skill_users = db.relationship('SkillUser', back_populates='skill', cascade='all, delete-orphan')
+
+
+class SkillUser(db.Model):
+    __tablename__ ='skill_user'
+    id = db.Column(db.Integer, primary_key=True)
+    level = db.Column(db.String(50), nullable=False, default='beginner')
+    proof_link = db.Column(db.String(255), nullable=True)
+    is_verified = db.Column(db.Boolean, default=False)
+    avatar = db.relationship('Media', back_populates='skill_user',uselist=False,
+                             cascade='all, delete-orphan',
+                             lazy='joined'
+                             )
+    user_id = db.Column(db.String(36), db.ForeignKey('users.id', ondelete='CASCADE'))
+    skill_id = db.Column(db.Integer, db.ForeignKey('skills.id', ondelete='CASCADE'))
+    # Đảm bảo 1 user không có 2 dòng trùng nhau cho 1 skill
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'skill_id', name='unique_user_skill'),
+    )
+
+    # RelationShip
+    user = db.relationship('User', back_populates='skill_users')
+    skill = db.relationship('Skill', back_populates='skill_users')
+
+
+
+
+class Transaction(db.Model):
+    __tablename__ = 'transactions'
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid4()))
+    user_id = db.Column(db.String(36), db.ForeignKey('users.id'), nullable=False)  # Ví của ai biến động
+    trans_type = db.Column(db.String(20), nullable=False)  # earn (cộng), spend (trừ), deposit (nạp), refund (hoàn)
+    amount = db.Column(db.Integer, nullable=False)  # Số lượng thay đổi (Luôn dương)
+    balance_after = db.Column(db.Integer, nullable=False)  # Số dư sau khi giao dịch (Để đối soát)
+    related_user_id = db.Column(db.String(36), db.ForeignKey('users.id'), nullable=True)  # Giao dịch với ai (nếu có)
+
+    description = db.Column(db.String(255), nullable=False)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # RelationShip
+    user = db.relationship('User', foreign_keys=[user_id], back_populates='transactions') # <--- Biển chỉ dẫn: "Đi lối này (cột user_id) nhé!"
+    related_user = db.relationship('User', foreign_keys=[related_user_id])# <--- Biển chỉ dẫn: "Đi lối kia (cột related_user_id) nhé!"
+
+
+

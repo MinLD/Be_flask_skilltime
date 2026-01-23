@@ -1,5 +1,7 @@
+# service/users_service.py
 
-from ..models.models_model import User, UserProfile
+
+from ..models.models_model import User, UserProfile, Role, Media
 from ..extensions import db
 from .role_service import get_role_by_name
 from ..schemas.schemas import UserSchema
@@ -9,8 +11,8 @@ from sqlalchemy import  or_
 import re
 USERNAME_REGEX = re.compile(r"^[a-zA-Z0-9]+$")
 
-def get_user_by_username(username):
-    return User.query.filter_by(username=username).first()
+def get_user_by_email(email):
+    return User.query.filter_by(email=email).first()
 
 def get_user_by_id(user_id):
     return User.query.filter_by(id=user_id).first()
@@ -34,8 +36,8 @@ def model_search_user(data, page, per_page):
     try:
         paginated_result = User.query.join(UserProfile).filter(
             or_(
-                User.username.ilike(search_pattern),
-                UserProfile.email.ilike(search_pattern),
+                UserProfile.phone.ilike(search_pattern),
+                User.email.ilike(search_pattern),
                 UserProfile.fullname.ilike(search_pattern)
             )
         ).paginate(page=page, per_page=per_page, error_out=False)
@@ -61,100 +63,173 @@ def model_search_user(data, page, per_page):
 
 
 def model_register(data):
-        username = data.get('username')
-        password = data.get('password')
-        email = data.get('email')
-        role = get_role_by_name(name='user')
-        if not username or not password or not email:
-            return None, "Thiếu thông tin bắt buộc hoặc thông tin rỗng (username, password, email)"
-        username = username.strip()
-        if " " in username:
-            return None, "Username không có khoảng trắng" 
-        if not USERNAME_REGEX.match(username):
-            return None, "Username chỉ được chứa chữ cái (a-z), và số (0-9)"
-        if get_user_by_username(username):
-            return None, "Tên đăng nhập đã tồn tại"
-        if get_email_profile(email):
-            return None, "Email đã tồn tại"
-        
-        new_profile = UserProfile(email=email, avatar=None, fullname=None, bio=None, date_of_birth=None)
-        new_user = User(username=username,roles=[role], profile=new_profile)
-   
-        new_user.set_password(password)
-        
-        db.session.add(new_user)
-        db.session.commit()
-        return new_user, None
-
-def model_admin_register(data ):
-        username = data.get('username')
-        password = data.get('password')
-        email = data.get('email')
-        role = data.get('role').lower()
-        fullname = data.get('fullname')
-        points = data.get('points')
-
-        roles = get_role_by_name(name=role)
-        if not username or not password or not email:
-            return None, "Thiếu thông tin bắt buộc hoặc thông tin rỗng (username, password, email)"
-        username = username.strip()
-        if " " in username:
-            return None, "Username không có khoảng trắng" 
-        if not USERNAME_REGEX.match(username):
-            return None, "Username chỉ được chứa chữ cái (a-z), và số (0-9)"
-        if get_user_by_username(username):
-            return None, "Tên đăng nhập đã tồn tại"
-        if get_email_profile(email):
-            return None, "Email đã tồn tại"
-        
-        new_profile = UserProfile(email=email, avatar=None, fullname=fullname, bio=None, date_of_birth=None)
-        new_user = User(username=username,roles=[roles], profile=new_profile, points=points)
-   
-        new_user.set_password(password)
-        
-        db.session.add(new_user)
-        db.session.commit()
-        return new_user, None
-
-def update_user_profile(data, user_id):
-    user = get_user_by_id(user_id)
-    if not user:
-        return None, "Không tìm thấy người dùng"
-    if not data:
-        return None, "Thiếu thông tin bắt buộc"
-    
-    updatable_fields = ['email', 'fullname', 'bio', 'date_of_birth']
-    for field in updatable_fields:
-        if field in data and data[field] is not None:
-            setattr(user.profile, field, data.get(field))
-    if 'username' in data and data['username'] is not None:
-        user.username = data['username']
-    if 'points' in data and data['points'] is not None:
-        user.points = data['points']
-    if 'role' in data and data['role'] is not None:
-        role = get_role_by_name(name=data['role'].lower())
-        if not role:
-            return None, "Không tìm thấy role"
-        user.roles = [role]
-
-    if 'avatar' in data:
-        avatar_media, error = upload_file(data['avatar'], user_id)
-        if error:
-            return None, error
-   
-       
-        user.profile.avatar = avatar_media
-
+    if User.query.filter_by(email=data.email).first():
+        raise ValueError("Email already exists")
+    default_role = get_role_by_name(name="user")
+    if not default_role:
+        raise ValueError("System error: Default role 'user' not found. Please contact admin.")
+    new_profile = UserProfile(fullname=data.fullname)
+    new_user = User(email=data.email)
+    new_user.profile = new_profile
+    new_user.set_password(data.password)
+    new_user.roles.append(default_role)
+    db.session.add(new_user)
     db.session.commit()
-    return user, None
+    return new_user
+
+
+def create_user_by_admin(data):
+    if User.query.filter_by(email=data.email).first():
+        raise ValueError(f"Email '{data.email}' is already taken")
+
+    role_obj = get_role_by_name(name=data.role)
+    if not role_obj:
+        raise ValueError(f"Role '{data.role}' not found")
+    new_profile = UserProfile(
+        fullname=data.fullname,
+        bio=data.bio,
+        phone=data.phone,
+        date_of_birth=data.date_of_birth,
+        reputation_score=100,
+        is_online=False
+    )
+
+
+    new_user = User(
+        email=data.email,
+        wallet_balance=data.wallet_balance,
+        status='active'
+    )
+
+    new_user.set_password(data.password)
+    new_user.profile = new_profile
+    new_user.roles.append(role_obj)
+
+    try:
+        db.session.add(new_user)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        print(f"DB Error: {e}")
+        raise ValueError("System error while saving data")
+    return new_user
+
+
+def update_user_profile(user_id, data, avatar_file=None):
+    user = User.query.get(user_id)
+    if not user:
+        raise ValueError("User not found")
+
+    update_data = data.model_dump(exclude_unset=True)
+
+    if not update_data and not avatar_file:
+        raise ValueError("No data provided for update")
+
+    for key, value in update_data.items():
+
+        if key == 'email':
+            if value != user.email:
+                if User.query.filter_by(email=value).first():
+                    raise ValueError(f"Email '{value}' is already taken")
+                user.email = value
+        elif key in ['fullname', 'bio', 'phone', 'date_of_birth', 'social_links']:
+            if not user.profile:
+                user.profile = UserProfile(user_id=user.id)
+
+            setattr(user.profile, key, value)
+
+    if avatar_file:
+        cloud_data = upload_file(avatar_file)
+
+        if not cloud_data:
+            raise ValueError("Failed to upload file to Cloud")
+        if user.profile.avatar:
+            user.profile.avatar.public_id = cloud_data['public_id']
+            user.profile.avatar.secure_url = cloud_data['secure_url']
+            user.profile.avatar.resource_type = cloud_data['resource_type']
+        else:
+            new_media = Media(
+                public_id=cloud_data['public_id'],
+                secure_url=cloud_data['secure_url'],
+                resource_type=cloud_data['resource_type'],
+                profile_avatar=user.profile
+            )
+            db.session.add(new_media)
+
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        print(f"DB Error: {e}")
+        raise ValueError("System error while updating profile")
+
+    return user
+
+def admin_update_user_profile(user_id, data, avatar_file=None):
+    user = User.query.get(user_id)
+    if not user:
+        raise ValueError("User not found")
+
+    update_data = data.model_dump(exclude_unset=True)
+
+    if not update_data:
+        raise ValueError("No data provided for update")
+
+    for key, value in update_data.items():
+        if key == 'role':
+            role_obj = get_role_by_name(name=value)
+            if not role_obj:
+                raise ValueError(f"Role '{value}' not found")
+            user.roles = [role_obj]
+
+        if key == 'email':
+            if value != user.email:
+                if User.query.filter_by(email=value).first():
+                    raise ValueError(f"Email '{value}' is already taken")
+                user.email = value
+        elif key in ['wallet_balance', 'status']:
+            setattr(user, key, value)
+        elif key in ['fullname', 'bio', 'phone', 'date_of_birth', 'social_links', 'reputation_score']:
+            if not user.profile:
+                user.profile = UserProfile(user_id=user.id)
+
+
+            setattr(user.profile, key, value)
+
+    if avatar_file:
+        cloud_data = upload_file(avatar_file)
+
+        if not cloud_data:
+            raise ValueError("Failed to upload file to Cloud")
+        if user.profile.avatar:
+            user.profile.avatar.public_id = cloud_data['public_id']
+            user.profile.avatar.secure_url = cloud_data['secure_url']
+            user.profile.avatar.resource_type = cloud_data['resource_type']
+        else:
+            new_media = Media(
+                public_id=cloud_data['public_id'],
+                secure_url=cloud_data['secure_url'],
+                resource_type=cloud_data['resource_type'],
+                profile_avatar=user.profile
+            )
+            db.session.add(new_media)
+
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        print(f"DB Error: {e}")
+        raise ValueError("System error while updating profile")
+
+    return user
 
 def delete_user(user_id):
     user = get_user_by_id(user_id)
     if not user:
-        return None, "Không tìm thấy người dùng"
+        raise ValueError("User not found")
     db.session.delete(user)
     db.session.commit()
-    return "Xóa người dùng thành công", None
+    return "Delete user successfully"
 
 def get_all_users (page , per_page):
     paginated_result = User.query.paginate(page=page, per_page=per_page)
