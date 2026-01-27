@@ -2,7 +2,7 @@
 from app import create_app
 import os
 import click
-from app.extensions import db
+from app.extensions import db ,socketio
 from app.models.models_model import Role,User
 from app.services.role_service import get_role_by_name
 from app.services.users_service import get_user_by_email
@@ -58,4 +58,8 @@ def seed(with_admin):
             db.session.rollback()
             click.echo(f'Lỗi khi tạo tài khoản admin: {e}')
 if __name__ == '__main__':
-    app.run(debug=True, reloader_type='watchdog')
+    # app.run(debug=True, reloader_type='watchdog')
+    # MỚI: Dùng socketio để chạy app
+    # allow_unsafe_werkzeug=True: Để chạy được trên môi trường Dev (localhost)
+    print("🚀 Server đang chạy với SocketIO tại http://127.0.0.1:5000")
+    socketio.run(app, debug=True, allow_unsafe_werkzeug=True, port=5000)

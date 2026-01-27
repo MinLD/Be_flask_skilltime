@@ -71,3 +71,27 @@ def transfer_credits(sender_id, data):
         db.session.rollback()
         raise e
 
+
+def hold_credits(user_id, amount, description, related_id=None):
+    """
+    Hàm trừ tiền tạm giữ (Escrow).
+    Dùng khi bắt đầu phiên học.
+    """
+    try:
+        # 1. Gọi hàm nội bộ process_transaction_log với type='spend'
+        # Hàm này (đã viết ở bước trước) sẽ tự động check số dư, nếu thiếu sẽ raise Error
+        process_transaction_log(
+            user_id=user_id,
+            amount=amount,
+            trans_type='spend',  # Trừ tiền ngay lập tức
+            description=f"[TẠM GIỮ] {description}",
+            related_user_id=related_id
+        )
+
+        # Lưu ý: Ở đây ta KHÔNG commit ngay, vì hàm này sẽ được gọi lồng
+        # trong một transaction lớn hơn ở bên socket_service.
+        # Nếu socket_service commit thì cái này mới commit.
+        return True
+    except Exception as e:
+        # Nếu lỗi (ví dụ không đủ tiền), ném lỗi ra ngoài để Socket biết mà dừng lại
+        raise e

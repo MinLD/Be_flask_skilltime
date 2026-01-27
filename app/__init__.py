@@ -2,7 +2,7 @@
 
 from flask import Flask , jsonify
 
-from .extensions import db, migrate, jwt, cors
+from .extensions import db, migrate, jwt, cors, socketio
 from config import config
 from .models.models_model import User, TokenBlocklist
 import cloudinary
@@ -27,6 +27,8 @@ def create_app(config_name='default'):
         api_key=app.config['CLOUDINARY_API_KEY'],
         api_secret=app.config['CLOUDINARY_API_SECRET']
     )
+    socketio.init_app(app)
+    from . import socket_events
 
 
     from .controller.auth_controller import auth_bp

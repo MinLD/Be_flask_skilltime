@@ -181,4 +181,40 @@ class Transaction(db.Model):
     related_user = db.relationship('User', foreign_keys=[related_user_id])# <--- Biển chỉ dẫn: "Đi lối kia (cột related_user_id) nhé!"
 
 
+# --- 10. MatchRequest (Yêu cầu tìm người giúp) ---
+class MatchRequest(db.Model):
+    __tablename__ = 'match_requests'
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid4()))
+    student_id = db.Column(db.String(36), db.ForeignKey('users.id'), nullable=False)
+    skill_id = db.Column(db.Integer, db.ForeignKey('skills.id'), nullable=False)
 
+    topic = db.Column(db.String(255), nullable=False)  # Chủ đề ngắn
+    description = db.Column(db.Text, nullable=True)  # Mô tả chi tiết
+    budget_credits = db.Column(db.Integer, nullable=False, default=0)  # Giá muốn trả
+
+    status = db.Column(db.String(20), default='pending')  # pending, matched, cancelled, expired
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Relationships
+    student = db.relationship('User', foreign_keys=[student_id])
+    skill = db.relationship('Skill')
+    session = db.relationship('MatchSession', back_populates='request', uselist=False)
+
+
+# --- 11. MatchSession (Phiên kết nối Video) ---
+class MatchSession(db.Model):
+    __tablename__ = 'match_sessions'
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid4()))
+
+    request_id = db.Column(db.String(36), db.ForeignKey('match_requests.id'), unique=True, nullable=False)
+    tutor_id = db.Column(db.String(36), db.ForeignKey('users.id'), nullable=False)
+
+    room_id = db.Column(db.String(100), nullable=True)  # ID phòng chat/video (Zego/Agora)
+    start_time = db.Column(db.DateTime, default=datetime.utcnow)
+    end_time = db.Column(db.DateTime, nullable=True)
+
+    status = db.Column(db.String(20), default='ongoing')  # ongoing, completed, disputed
+
+    # Relationships
+    request = db.relationship('MatchRequest', back_populates='session')
+    tutor = db.relationship('User', foreign_keys=[tutor_id])
